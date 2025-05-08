@@ -1,6 +1,5 @@
 package com.company.analysis;
 
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
@@ -20,6 +19,10 @@ public class TransactionAnalysis {
 
         Configuration conf = new Configuration();
 
+        // Configuração especial para Windows (se necessário)
+        System.setProperty("hadoop.home.dir", "C:\\hadoop");
+        conf.set("mapreduce.framework.name", "local");
+
         // Configuração para melhorar performance com arquivos grandes
         conf.set("mapreduce.input.fileinputformat.split.minsize", "268435456"); // 256MB por split
         conf.setBoolean("mapreduce.input.fileinputformat.input.dir.recursive", true);
@@ -27,7 +30,7 @@ public class TransactionAnalysis {
         Job job = Job.getInstance(conf, "Transaction Analysis - Q" + args[0]);
         job.setJarByClass(TransactionAnalysis.class);
 
-        // Configuração dinâmica baseada no tipo de path (file:// ou hdfs://)
+        // Configuração dinâmica baseada no tipo de path
         Path inputPath = new Path(args[1]);
         Path outputPath = new Path(args[2]);
 
@@ -36,59 +39,66 @@ public class TransactionAnalysis {
 
         // Configuração dos jobs conforme a questão
         switch (args[0]) {
-            case "1":
-                job.setMapperClass(BrazilTransactionCount.Mapper.class);
-                job.setReducerClass(BrazilTransactionCount.Reducer.class);
+            case "1": // Já está correto (BrazilTransactionCount)
+                job.setMapperClass(BrazilTransactionCount.MapperClass.class);
+                job.setReducerClass(BrazilTransactionCount.ReducerClass.class);
                 job.setOutputKeyClass(Text.class);
                 job.setOutputValueClass(IntWritable.class);
                 break;
-            case "2":
-                job.setMapperClass(TransactionsPerYear.Mapper.class);
-                job.setReducerClass(TransactionsPerYear.Reducer.class);
-                job.setOutputKeyClass(IntWritable.class);
+
+            case "2": // Transações por ano
+                job.setMapperClass(TransactionsPerYear.MapperClass.class);
+                job.setReducerClass(TransactionsPerYear.ReducerClass.class);
+                job.setOutputKeyClass(Text.class);  // Ano como Text
                 job.setOutputValueClass(IntWritable.class);
                 break;
-            case "3":
-                job.setMapperClass(TransactionsPerCategory.Mapper.class);
-                job.setReducerClass(TransactionsPerCategory.Reducer.class);
+
+            case "3": // Transações por categoria
+                job.setMapperClass(TransactionsPerCategory.MapperClass.class);
+                job.setReducerClass(TransactionsPerCategory.ReducerClass.class);
                 job.setOutputKeyClass(Text.class);
                 job.setOutputValueClass(IntWritable.class);
                 break;
-            case "4":
-                job.setMapperClass(TransactionsPerFlow.Mapper.class);
-                job.setReducerClass(TransactionsPerFlow.Reducer.class);
+
+            case "4": // Transações por tipo de fluxo
+                job.setMapperClass(TransactionsPerFlow.MapperClass.class);
+                job.setReducerClass(TransactionsPerFlow.ReducerClass.class);
                 job.setOutputKeyClass(Text.class);
                 job.setOutputValueClass(IntWritable.class);
                 break;
-            case "5":
-                job.setMapperClass(AvgPricePerYearBrazil.Mapper.class);
-                job.setReducerClass(AvgPricePerYearBrazil.Reducer.class);
-                job.setOutputKeyClass(IntWritable.class);
+
+            case "5": // Valor médio por ano (Brasil)
+                job.setMapperClass(AvgPricePerYearBrazil.MapperClass.class);
+                job.setReducerClass(AvgPricePerYearBrazil.ReducerClass.class);
+                job.setOutputKeyClass(Text.class);  // Ano como Text
                 job.setOutputValueClass(DoubleWritable.class);
                 break;
-            case "6":
-                job.setMapperClass(MinMaxPriceBrazil2016.Mapper.class);
-                job.setReducerClass(MinMaxPriceBrazil2016.Reducer.class);
-                job.setOutputKeyClass(Text.class);
-                job.setOutputValueClass(Text.class);
-                break;
-            case "7":
-                job.setMapperClass(AvgExportPriceBrazil.Mapper.class);
-                job.setReducerClass(AvgExportPriceBrazil.Reducer.class);
-                job.setOutputKeyClass(IntWritable.class);
+
+            case "6": // Transação mais cara/barata (Brasil 2016)
+                job.setMapperClass(MinMaxPriceBrazil2016.MapperClass.class);
+                job.setReducerClass(MinMaxPriceBrazil2016.ReducerClass.class);
+                job.setOutputKeyClass(Text.class);  // Chave fixa "min"/"max"
                 job.setOutputValueClass(DoubleWritable.class);
                 break;
-            case "8":
-                job.setMapperClass(MinMaxPricePerYearCountry.Mapper.class);
-                job.setReducerClass(MinMaxPricePerYearCountry.Reducer.class);
-                job.setOutputKeyClass(Text.class);
-                job.setOutputValueClass(Text.class);
+
+            case "7": // Valor médio exportações (Brasil)
+                job.setMapperClass(AvgExportPriceBrazil.MapperClass.class);
+                job.setReducerClass(AvgExportPriceBrazil.ReducerClass.class);
+                job.setOutputKeyClass(Text.class);  // Ano como Text
+                job.setOutputValueClass(DoubleWritable.class);
                 break;
+
+            case "8": // Maior/menor preço por ano e país
+                job.setMapperClass(MinMaxPricePerYearCountry.MapperClass.class);
+                job.setReducerClass(MinMaxPricePerYearCountry.ReducerClass.class);
+                job.setOutputKeyClass(Text.class);  // Formato "País_Ano"
+                job.setOutputValueClass(Text.class); // Formato "min:X,max:Y"
+                break;
+
             default:
                 throw new IllegalArgumentException("Questão inválida: " + args[0]);
         }
 
-        // Configurações comuns para todos os jobs
         job.setNumReduceTasks(4); // Número de reducers para paralelismo
 
         System.exit(job.waitForCompletion(true) ? 0 : 1);

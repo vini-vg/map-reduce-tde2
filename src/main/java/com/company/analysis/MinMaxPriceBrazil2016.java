@@ -1,64 +1,53 @@
 package com.company.analysis;
 
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
 
-import org.apache.hadoop.io.*;
+import java.io.IOException;
 
 public class MinMaxPriceBrazil2016 {
-    public static class PriceWritable implements Writable {
-        public double price;
-        public String commodity;
+    public static class MapperClass extends Mapper<Object, Text, Text, DoubleWritable> {
+        private Text yearKey = new Text("2016");
+        private DoubleWritable price = new DoubleWritable();
 
-        public void write(DataOutput out) throws IOException {
-            out.writeDouble(price);
-            out.writeUTF(commodity);
-        }
-
-        public void readFields(DataInput in) throws IOException {
-            price = in.readDouble();
-            commodity = in.readUTF();
-        }
-    }
-
-    public static class Mapper extends org.apache.hadoop.mapreduce.Mapper<Object, Text, Text, PriceWritable> {
-        private final Text BRAZIL_2016 = new Text("Brazil_2016");
-
-        public void map(Object key, Text value, Context context)
+        @Override
+        protected void map(Object key, Text value, Context context)
                 throws IOException, InterruptedException {
-            TransactionParser parser = new TransactionParser();
-            if (parser.parse(value.toString()) &&
-                    parser.getCountry().equals("Brazil") &&
-                    parser.getYear() == 2016) {
+            if (value.toString().contains("Country;Year;")) return;
 
-                PriceWritable price = new PriceWritable();
-                price.price = parser.getPrice();
-                price.commodity = parser.getCommodity();
-                context.write(BRAZIL_2016, price);
+            String[] fields = value.toString().split(";");
+            if (fields.length >= 6 && "Brazil".equalsIgnoreCase(fields[0].trim())
+                    && "2016".equals(fields[1].trim())) {
+                try {
+                    double transactionPrice = Double.parseDouble(fields[5].trim());
+                    price.set(transactionPrice);
+                    context.write(yearKey, price);
+                } catch (NumberFormatException e) {
+                    // Ignora valores inválidos
+                }
             }
         }
     }
 
-    public static class Reducer extends org.apache.hadoop.mapreduce.Reducer<Text, PriceWritable, Text, Text> {
-        public void reduce(Text key, Iterable<PriceWritable> values, Context context)
+    public static class ReducerClass extends Reducer<Text, DoubleWritable, Text, Text> {
+        private Text result = new Text();
+
+        @Override
+        protected void reduce(Text key, Iterable<DoubleWritable> values, Context context)
                 throws IOException, InterruptedException {
             double min = Double.MAX_VALUE;
             double max = Double.MIN_VALUE;
-            String minCommodity = "";
-            String maxCommodity = "";
 
-            for (PriceWritable val : values) {
-                if (val.price < min) {
-                    min = val.price;
-                    minCommodity = val.commodity;
-                }
-                if (val.price > max) {
-                    max = val.price;
-                    maxCommodity = val.commodity;
-                }
+            for (DoubleWritable val : values) {
+                double price = val.get();
+                if (price < min) min = price;
+                if (price > max) max = price;
             }
 
-            context.write(key,
-                    new Text(String.format("Max: %s (USD %.2f), Min: %s (USD %.2f)",
-                            maxCommodity, max, minCommodity, min)));
+            result.set("Min: " + min + ", Max: " + max);
+            context.write(key, result);
         }
     }
 }

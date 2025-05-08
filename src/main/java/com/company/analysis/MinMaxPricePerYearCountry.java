@@ -1,57 +1,58 @@
 package com.company.analysis;
 
-import org.apache.hadoop.io.*;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+
+import java.io.IOException;
 
 public class MinMaxPricePerYearCountry {
-    public static class PriceWritable implements Writable {
-        public double price;
-        public String commodity;
+    public static class MapperClass extends Mapper<Object, Text, Text, DoubleWritable> {
+        private DoubleWritable price = new DoubleWritable();
 
-        public void write(DataOutput out) throws IOException {
-            out.writeDouble(price);
-            out.writeUTF(commodity);
-        }
+        @Override
+        protected void map(Object key, Text value, Context context)
+                throws IOException, InterruptedException {
+            if (value.toString().contains("Country;Year;")) return;
 
-        public void readFields(DataInput in) throws IOException {
-            price = in.readDouble();
-            commodity = in.readUTF();
+            String[] fields = value.toString().split(";");
+            if (fields.length >= 6) {
+                try {
+                    String country = fields[0].trim();
+                    String year = fields[1].trim();
+                    double transactionPrice = Double.parseDouble(fields[5].trim());
+
+                    // Chave composta: "País_Ano"
+                    Text compositeKey = new Text(country + "_" + year);
+                    price.set(transactionPrice);
+
+                    context.write(compositeKey, price);
+                } catch (NumberFormatException e) {
+                    // Ignora valores inválidos
+                }
+            }
         }
     }
 
-    public static class Mapper extends org.apache.hadoop.mapreduce.Mapper<Object, Text, Text, PriceWritable> {
-        public void map(Object key, Text value, Context context)
-                throws IOException, InterruptedException {
-            TransactionParser parser = new TransactionParser();
-            if (parser.parse(value.toString())) {
-                Text compositeKey = new Text(parser.getYear() + "_" + parser.getCountry());
-                PriceWritable price = new PriceWritable();
-                price.price = parser.getPrice();
-                price.commodity = parser.getCommodity();
-                context.write(compositeKey, price);
-            }
-        }
-    }
+    public static class ReducerClass extends Reducer<Text, DoubleWritable, Text, Text> {
+        private Text result = new Text();
 
-    public static class Reducer extends org.apache.hadoop.mapreduce.Reducer<Text, PriceWritable, Text, Text> {
-        public void reduce(Text key, Iterable<PriceWritable> values, Context context)
+        @Override
+        protected void reduce(Text key, Iterable<DoubleWritable> values, Context context)
                 throws IOException, InterruptedException {
-            double min = Double.MAX_VALUE, max = Double.MIN_VALUE;
-            String minCommodity = "", maxCommodity = "";
+            double min = Double.MAX_VALUE;
+            double max = Double.MIN_VALUE;
 
-            for (PriceWritable val : values) {
-                if (val.price < min) {
-                    min = val.price;
-                    minCommodity = val.commodity;
-                }
-                if (val.price > max) {
-                    max = val.price;
-                    maxCommodity = val.commodity;
-                }
+            for (DoubleWritable val : values) {
+                double price = val.get();
+                if (price < min) min = price;
+                if (price > max) max = price;
             }
 
-            context.write(key,
-                    new Text(String.format("Max: %s (%.2f), Min: %s (%.2f)",
-                            maxCommodity, max, minCommodity, min)));
+            // Formato: "min=valor,max=valor"
+            result.set(String.format("min=%.2f,max=%.2f", min, max));
+            context.write(key, result);
         }
     }
 }
